@@ -13,23 +13,25 @@ android {
     applicationId = "com.abutorab.resultentry"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = (System.getenv("VERSION_CODE")?.toIntOrNull()) ?: 1
+    versionName = (System.getenv("VERSION_NAME") ?: "1.0").removePrefix("v")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
     create("release") {
-      val envKeystore = System.getenv("KEYSTORE_PATH")
-      val keystorePath = if (envKeystore.isNullOrEmpty()) "${rootDir}/my-upload-key.jks" else envKeystore
-      val keystoreFile = file(keystorePath)
-      if (keystoreFile.exists()) {
-        storeFile = keystoreFile
-        storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
-      }
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      storeFile = file(keystorePath)
+      storePassword = System.getenv("STORE_PASSWORD")
+      keyAlias = "upload"
+      keyPassword = System.getenv("KEY_PASSWORD")
+    }
+    create("debugConfig") {
+      storeFile = file("${rootDir}/debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
   }
 
@@ -38,17 +40,9 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      val envKeystore = System.getenv("KEYSTORE_PATH")
-      val keystorePath = if (envKeystore.isNullOrEmpty()) "${rootDir}/my-upload-key.jks" else envKeystore
-      if (file(keystorePath).exists()) {
-        signingConfig = signingConfigs.getByName("release")
-      } else {
-        signingConfig = signingConfigs.getByName("debug")
-      }
+      signingConfig = signingConfigs.getByName("release")
     }
-    debug { 
-      signingConfig = signingConfigs.getByName("debug") 
-    }
+    debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
