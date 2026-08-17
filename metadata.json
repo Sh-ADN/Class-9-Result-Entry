@@ -1,0 +1,6 @@
+{
+  "name": "Class 9 Result Entry",
+  "description": "App for two schoolteachers to submit exam results for their own class section.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
