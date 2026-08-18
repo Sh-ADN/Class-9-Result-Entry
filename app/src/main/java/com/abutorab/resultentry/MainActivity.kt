@@ -278,6 +278,7 @@ fun QuickEditStudentRow(
     val isGpaInvalid = gpaDigits.isNotEmpty() && (gpaDouble == null || gpaDouble !in 0.0..5.0)
 
     LaunchedEffect(totalMarks, failedCount, gpaDigits) {
+        if (!isEdited) return@LaunchedEffect
         if (isMarksInvalid || isGpaInvalid) return@LaunchedEffect
 
         val tm = totalMarks.toIntOrNull()
@@ -424,21 +425,25 @@ fun GpaInputBoxes(
     isError: Boolean
 ) {
     val focusRequesters = remember { List(3) { FocusRequester() } }
-    
-    fun updateChar(index: Int, newStr: String) {
-        val charStr = newStr.replace(Regex("[^\\d]"), "")
-        val currentArray = CharArray(3) { i -> value.getOrElse(i) { ' ' } }
-        
-        if (charStr.isEmpty()) {
-            currentArray[index] = ' '
-            onValueChange(String(currentArray).trimEnd())
-            if (index > 0) focusRequesters[index - 1].requestFocus()
-        } else {
-            val char = charStr.last()
-            currentArray[index] = char
-            onValueChange(String(currentArray).trimEnd())
-            if (index < 2) focusRequesters[index + 1].requestFocus()
+    var pendingFocus by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(pendingFocus) {
+        pendingFocus?.let {
+            focusRequesters[it].requestFocus()
+            pendingFocus = null
         }
+    }
+
+    fun setDigit(index: Int, digit: Char) {
+        val currentArray = CharArray(3) { i -> value.getOrElse(i) { ' ' } }
+        currentArray[index] = digit
+        onValueChange(String(currentArray).trimEnd())
+    }
+
+    fun clearDigit(index: Int) {
+        val currentArray = CharArray(3) { i -> value.getOrElse(i) { ' ' } }
+        currentArray[index] = ' '
+        onValueChange(String(currentArray).trimEnd())
     }
 
     Row(
@@ -450,8 +455,16 @@ fun GpaInputBoxes(
             char = value.getOrNull(0),
             isError = isError,
             focusRequester = focusRequesters[0],
-            onValueChange = { updateChar(0, it) },
-            onBackspace = { /* do nothing */ }
+            keyboardType = KeyboardType.Decimal,
+            onValueChange = { newStr ->
+                if (newStr.contains('.')) {
+                    pendingFocus = 1
+                } else {
+                    val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
+                    if (digit != null) setDigit(0, digit) else clearDigit(0)
+                }
+            },
+            onBackspace = { /* box 0 has no earlier box */ }
         )
         Text(
             text = ".",
@@ -462,16 +475,33 @@ fun GpaInputBoxes(
             char = value.getOrNull(1),
             isError = isError,
             focusRequester = focusRequesters[1],
-            onValueChange = { updateChar(1, it) },
-            onBackspace = { if (value.getOrNull(1) == null) focusRequesters[0].requestFocus() }
+            onValueChange = { newStr ->
+                val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
+                if (digit != null) {
+                    setDigit(1, digit)
+                    pendingFocus = 2
+                } else {
+                    clearDigit(1)
+                    pendingFocus = 0
+                }
+            },
+            onBackspace = { pendingFocus = 0 }
         )
         Spacer(modifier = Modifier.width(8.dp))
         GpaSingleBox(
             char = value.getOrNull(2),
             isError = isError,
             focusRequester = focusRequesters[2],
-            onValueChange = { updateChar(2, it) },
-            onBackspace = { if (value.getOrNull(2) == null) focusRequesters[1].requestFocus() }
+            onValueChange = { newStr ->
+                val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
+                if (digit != null) {
+                    setDigit(2, digit)
+                } else {
+                    clearDigit(2)
+                    pendingFocus = 1
+                }
+            },
+            onBackspace = { pendingFocus = 1 }
         )
     }
 }
@@ -482,7 +512,8 @@ fun GpaSingleBox(
     isError: Boolean,
     focusRequester: FocusRequester,
     onValueChange: (String) -> Unit,
-    onBackspace: () -> Unit
+    onBackspace: () -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Number
 ) {
     val hasValue = char != null && char != ' '
     BasicTextField(
@@ -492,8 +523,8 @@ fun GpaSingleBox(
             .size(56.dp)
             .border(
                 width = if (hasValue) 2.dp else 1.dp,
-                color = if (isError) MaterialTheme.colorScheme.error 
-                        else if (hasValue) MaterialTheme.colorScheme.primary 
+                color = if (isError) MaterialTheme.colorScheme.error
+                        else if (hasValue) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.outline,
                 shape = MaterialTheme.shapes.small
             )
@@ -505,7 +536,7 @@ fun GpaSingleBox(
                 } else false
             },
         keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Number,
+            keyboardType = keyboardType,
             imeAction = ImeAction.Done
         ),
         textStyle = MaterialTheme.typography.headlineMedium.copy(
