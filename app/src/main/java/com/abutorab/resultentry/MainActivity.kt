@@ -9,6 +9,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +34,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,6 +71,63 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun SplashScreen(onTimeout: () -> Unit) {
+    val scale = remember { Animatable(0.5f) }
+    val alpha = remember { Animatable(0f) }
+
+    LaunchedEffect(key1 = true) {
+        launch {
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 1000)
+            )
+        }
+        launch {
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 1000)
+            )
+        }
+        delay(2000L)
+        onTimeout()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.secondary
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.scale(scale.value).alpha(alpha.value)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.app_result_icon_1787285063865),
+                contentDescription = "App Logo",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(150.dp)
+                    .clip(RoundedCornerShape(24.dp))
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Class 9 Result Entry",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultApp(
@@ -83,13 +152,21 @@ fun ResultApp(
         }
     }
 
-    val startDestination = if (section == null) "setup" else "roster"
+    val startDestination = "splash"
 
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier
     ) {
+        composable("splash") {
+            SplashScreen(onTimeout = {
+                val nextDest = if (section == null) "setup" else "roster"
+                navController.navigate(nextDest) {
+                    popUpTo("splash") { inclusive = true }
+                }
+            })
+        }
         composable("setup") {
             SetupScreen(
                 currentSection = section,

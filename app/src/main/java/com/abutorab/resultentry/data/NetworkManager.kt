@@ -211,8 +211,7 @@ class NetworkManager {
                 throw Exception(jsonObj.getString("error"))
             }
             GenerateDocResponse(
-                docUrl = jsonObj.getString("docUrl"),
-                pdfUrl = jsonObj.getString("pdfUrl")
+                docUrl = jsonObj.getString("docUrl")
             )
         } else {
             throw Exception("Failed to generate doc: ${connection.responseCode}")

@@ -10,10 +10,10 @@ import com.abutorab.resultentry.data.ResultRepository
 class AppContainer(context: Context) {
     val database by lazy {
         Room.databaseBuilder(
-            context,
+            context.applicationContext,
             AppDatabase::class.java,
             "result_database"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
     
     val networkManager by lazy { NetworkManager() }
@@ -27,6 +27,12 @@ class MyApplication : Application() {
     lateinit var container: AppContainer
     override fun onCreate() {
         super.onCreate()
+        instance = this
         container = AppContainer(this)
+    }
+
+    companion object {
+        lateinit var instance: MyApplication
+            private set
     }
 }

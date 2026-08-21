@@ -102,7 +102,8 @@ class MainViewModel(
 
 val MainViewModelFactory = object : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
-        val application = checkNotNull(extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]) as MyApplication
+        val application = (extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? MyApplication)
+            ?: MyApplication.instance
         val prefs = application.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
         return MainViewModel(application.container.resultRepository, prefs) as T
     }

@@ -27,6 +27,5 @@ data class SummaryResponse(
 )
 
 data class GenerateDocResponse(
-    val docUrl: String,
-    val pdfUrl: String
+    val docUrl: String
 )

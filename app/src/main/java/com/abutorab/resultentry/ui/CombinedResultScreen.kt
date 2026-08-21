@@ -36,8 +36,8 @@ class CombinedResultViewModel(private val networkManager: NetworkManager) : View
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
 
-    private val _pdfUrl = MutableStateFlow<String?>(null)
-    val pdfUrl: StateFlow<String?> = _pdfUrl
+    private val _docUrl = MutableStateFlow<String?>(null)
+    val docUrl: StateFlow<String?> = _docUrl
 
     private val _errorChannel = MutableStateFlow<String?>(null)
     val errorChannel: StateFlow<String?> = _errorChannel
@@ -79,7 +79,7 @@ class CombinedResultViewModel(private val networkManager: NetworkManager) : View
             try {
                 networkManager.compileResults()
                 val response = networkManager.generateDoc()
-                _pdfUrl.value = response.pdfUrl
+                _docUrl.value = response.docUrl
                 fetchSummary()
             } catch (e: Exception) {
                 _errorChannel.value = e.message ?: "Failed to generate document"
@@ -96,7 +96,8 @@ class CombinedResultViewModel(private val networkManager: NetworkManager) : View
 
 val CombinedResultViewModelFactory = object : androidx.lifecycle.ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: androidx.lifecycle.viewmodel.CreationExtras): T {
-        val application = checkNotNull(extras[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]) as com.abutorab.resultentry.MyApplication
+        val application = (extras[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as? com.abutorab.resultentry.MyApplication)
+            ?: com.abutorab.resultentry.MyApplication.instance
         return CombinedResultViewModel(application.container.networkManager) as T
     }
 }
@@ -142,7 +143,7 @@ fun CombinedResultScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isCompiling by viewModel.isCompiling.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
-    val pdfUrl by viewModel.pdfUrl.collectAsState()
+    val docUrl by viewModel.docUrl.collectAsState()
     val error by viewModel.errorChannel.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -204,20 +205,20 @@ fun CombinedResultScreen(
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text("Generate Result PDF")
+                        Text("Generate Result Doc")
                     }
                 }
 
-                if (pdfUrl != null) {
+                if (docUrl != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(pdfUrl))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(docUrl))
                             context.startActivity(intent)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("View Result PDF")
+                        Text("View Result Doc")
                     }
                 }
             }

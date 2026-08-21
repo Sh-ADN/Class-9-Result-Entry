@@ -2,10 +2,30 @@ package com.abutorab.resultentry.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Light Theme Colors
+val NavyBluePrimary = Color(0xFF0D254C)
+val NavyBlueOnPrimary = Color(0xFFFFFFFF)
+val NavyBluePrimaryContainer = Color(0xFFD8E2FF)
+val NavyBlueOnPrimaryContainer = Color(0xFF001944)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val EmeraldSecondary = Color(0xFF107C41)
+val EmeraldOnSecondary = Color(0xFFFFFFFF)
+val EmeraldSecondaryContainer = Color(0xFF9FF2BC)
+val EmeraldOnSecondaryContainer = Color(0xFF00210C)
+
+val AcademicBackground = Color(0xFFF8FAFC)
+val AcademicSurface = Color(0xFFFFFFFF)
+
+// Dark Theme Colors
+val NavyBluePrimaryDark = Color(0xFFAEC6FF)
+val NavyBlueOnPrimaryDark = Color(0xFF002E6B)
+val NavyBluePrimaryContainerDark = Color(0xFF004495)
+val NavyBlueOnPrimaryContainerDark = Color(0xFFD8E2FF)
+
+val EmeraldSecondaryDark = Color(0xFF83D5A1)
+val EmeraldOnSecondaryDark = Color(0xFF00391A)
+val EmeraldSecondaryContainerDark = Color(0xFF005228)
+val EmeraldOnSecondaryContainerDark = Color(0xFF9FF2BC)
+
+val AcademicBackgroundDark = Color(0xFF0B111A)
+val AcademicSurfaceDark = Color(0xFF131D2B)
