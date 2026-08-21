@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -28,12 +30,36 @@ class MainViewModel(
     private val _section = MutableStateFlow<String?>(sharedPrefs.getString("section", null))
     val section: StateFlow<String?> = _section.asStateFlow()
     
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     @OptIn(ExperimentalCoroutinesApi::class)
-    val studentResults: StateFlow<List<StudentResult>> = _section
-        .flatMapLatest { sec ->
-            if (sec != null) repository.getStudentResults(sec) else flowOf(emptyList())
+    val studentResults: StateFlow<List<StudentResult>> = combine(
+        _section,
+        _searchQuery
+    ) { sec, query ->
+        Pair(sec, query)
+    }.flatMapLatest { (sec, query) ->
+        if (sec == null) {
+            flowOf(emptyList())
+        } else {
+            repository.getStudentResults(sec).map { list ->
+                if (query.isBlank()) {
+                    list
+                } else {
+                    val q = query.trim().lowercase()
+                    list.filter { 
+                        it.roster.roll.toString().contains(q) ||
+                        it.roster.name.lowercase().contains(q)
+                    }
+                }
+            }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
     
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -95,7 +121,14 @@ class MainViewModel(
                 localUpdatedAt = System.currentTimeMillis()
             )
             repository.saveEntryLocally(entry)
-            syncNow()
+            // Silent background sync without locking UI state
+            viewModelScope.launch {
+                try {
+                    repository.syncDrafts()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 }

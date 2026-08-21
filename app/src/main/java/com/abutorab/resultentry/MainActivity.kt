@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -11,12 +12,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -26,10 +29,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +49,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import com.abutorab.resultentry.data.SyncState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -245,8 +253,11 @@ fun RosterScreen(
     val results by viewModel.studentResults.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
+    val currentSection by viewModel.section.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     
-    val syncedCount = results.count { it.entry?.syncState == com.abutorab.resultentry.data.SyncState.SYNCED }
+    val syncedCount = results.count { it.entry?.syncState == SyncState.SYNCED }
+    val draftCount = results.count { it.entry?.syncState == SyncState.DRAFT }
     
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -258,7 +269,7 @@ fun RosterScreen(
                     Column {
                         Text("Class 9 Result Entry")
                         Text(
-                            "Synced: $syncedCount / ${results.size}",
+                            "Synced: $syncedCount • Drafts: $draftCount • Total: ${results.size}",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -285,8 +296,55 @@ fun RosterScreen(
             if (isRefreshing || isSyncing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+
+            // Interactive Header for Section Selection & Instant Roll/Name Search
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = currentSection == "A",
+                            onClick = { viewModel.setSection("A") },
+                            label = { Text("Section A") }
+                        )
+                        FilterChip(
+                            selected = currentSection == "B",
+                            onClick = { viewModel.setSection("B") },
+                            label = { Text("Section B") }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { viewModel.setSearchQuery(it) },
+                        placeholder = { Text("Search Roll or Name...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
+
             LazyColumn(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 items(results, key = { it.roster.roll }) { result ->
                     QuickEditStudentRow(
@@ -312,6 +370,7 @@ fun QuickEditStudentRow(
     showSnackbar: (String) -> Unit
 ) {
     var isEdited by remember(result.roster.roll) { mutableStateOf(false) }
+    var saveStatus by remember(result.roster.roll) { mutableStateOf("idle") } // "idle", "saving", "saved"
 
     var totalMarks by remember(result.roster.roll) { mutableStateOf(result.entry?.totalMarks?.toString() ?: "") }
     var failedCount by remember(result.roster.roll) { mutableStateOf(result.entry?.failedCount) }
@@ -338,7 +397,7 @@ fun QuickEditStudentRow(
     }
 
     LaunchedEffect(result.entry?.syncState) {
-        if (result.entry?.syncState == com.abutorab.resultentry.data.SyncState.ERROR) {
+        if (result.entry?.syncState == SyncState.ERROR) {
             showSnackbar("Failed to sync roll ${result.roster.roll} — will retry.")
         }
     }
@@ -354,6 +413,7 @@ fun QuickEditStudentRow(
     }
     val isGpaInvalid = gpaDigits.isNotEmpty() && (gpaDouble == null || gpaDouble !in 0.0..5.0)
 
+    // Debounced Auto-Save Loop (800ms) with reactive saveStatus feedback
     LaunchedEffect(totalMarks, failedCount, gpaDigits) {
         if (!isEdited) return@LaunchedEffect
         if (isMarksInvalid || isGpaInvalid) return@LaunchedEffect
@@ -364,10 +424,15 @@ fun QuickEditStudentRow(
 
         if (tm != null && fc != null) {
             if (fc > 0 || (fc == 0 && g != null)) {
-                // Debounce auto-save to prevent continuous DB writes while typing
+                saveStatus = "saving"
                 delay(800)
                 onSave(tm, fc, if (fc == 0) g else null)
                 isEdited = false
+                saveStatus = "saved"
+                delay(2000)
+                if (saveStatus == "saved") {
+                    saveStatus = "idle"
+                }
             }
         }
     }
@@ -397,7 +462,7 @@ fun QuickEditStudentRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -408,19 +473,82 @@ fun QuickEditStudentRow(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
-                        text = "${result.roster.roll}. ${result.roster.name}",
-                        style = MaterialTheme.typography.titleMedium
+                        text = "Roll ${result.roster.roll} — ${result.roster.name}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Status: ${result.status}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = when (result.status) {
-                            "Synced" -> MaterialTheme.colorScheme.primary
-                            "Draft", "Draft (Error)" -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    // Reactive Status Indicator Badge (Saving... / Saved / Synced / Draft)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        when (saveStatus) {
+                            "saving" -> {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            "Saving...",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                            "saved" -> {
+                                Surface(
+                                    color = Color(0xFFE8F5E9),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Saved",
+                                            tint = Color(0xFF2E7D32),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            "Saved",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                }
+                            }
+                            else -> {
+                                val (bgColor, textColor, text) = when (result.entry?.syncState) {
+                                    SyncState.SYNCED -> Triple(Color(0xFFE3F2FD), Color(0xFF1565C0), "Synced")
+                                    SyncState.DRAFT -> Triple(Color(0xFFFFF3E0), Color(0xFFE65100), "Draft")
+                                    SyncState.ERROR -> Triple(Color(0xFFFFEBEE), Color(0xFFC62828), "Sync Error")
+                                    null -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "Not Started")
+                                }
+                                Surface(
+                                    color = bgColor,
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = text,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                        color = textColor,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
                         }
-                    )
+                    }
                 }
                 
                 OutlinedTextField(
@@ -429,9 +557,10 @@ fun QuickEditStudentRow(
                         totalMarks = it
                         isEdited = true
                     },
-                    label = { Text("Marks") },
+                    label = { Text("Total Marks") },
+                    placeholder = { Text("0-1150") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(110.dp),
+                    modifier = Modifier.width(120.dp),
                     singleLine = true,
                     isError = isMarksInvalid,
                     supportingText = { if (isMarksInvalid) Text("0-1150") }
@@ -440,22 +569,28 @@ fun QuickEditStudentRow(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Text("Failed Subjects:", style = MaterialTheme.typography.bodySmall)
-            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Failed Subjects:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Pill-style Numeric Selectors (0-9)
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 (0..9).forEach { number ->
-                    FilterChip(
-                        selected = failedCount == number,
+                    FailedSubjectPill(
+                        number = number,
+                        isSelected = failedCount == number,
                         onClick = { 
                             failedCount = number
                             isEdited = true
-                        },
-                        label = { Text(number.toString()) }
+                        }
                     )
                 }
             }
@@ -491,6 +626,51 @@ fun QuickEditStudentRow(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun FailedSubjectPill(
+    number: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isSelected && number == 0 -> Color(0xFFE8F5E9)
+            isSelected -> Color(0xFFFFEBEE)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        label = "pillBg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            isSelected && number == 0 -> Color(0xFF2E7D32)
+            isSelected -> Color(0xFFC62828)
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "pillFg"
+    )
+    val borderColor = if (isSelected) {
+        if (number == 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+    } else Color.Transparent
+
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = backgroundColor,
+        border = BorderStroke(if (isSelected) 1.5.dp else 0.dp, borderColor),
+        modifier = Modifier.size(38.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = number.toString(),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                ),
+                color = contentColor
+            )
         }
     }
 }
