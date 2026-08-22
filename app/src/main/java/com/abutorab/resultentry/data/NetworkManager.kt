@@ -13,6 +13,27 @@ import java.net.URL
 class NetworkManager {
     private val scriptUrl = "https://script.google.com/macros/s/AKfycbwVR0HtbBCosJVx0HomgVScJVoRoZDP-B8nPsLWjd1jRM3LL20LYxTzfuc7hxJgTmtz5A/exec"
 
+    private fun JSONObject.optIntOrNull(key: String): Int? {
+        if (!has(key) || isNull(key)) return null
+        val raw = opt(key)
+        if (raw is Number) return raw.toInt()
+        if (raw is String) return raw.trim().toDoubleOrNull()?.toInt() ?: raw.trim().toIntOrNull()
+        return null
+    }
+
+    private fun JSONObject.optDoubleOrNull(key: String): Double? {
+        if (!has(key) || isNull(key)) return null
+        val raw = opt(key)
+        if (raw is Number) return raw.toDouble()
+        if (raw is String) return raw.trim().toDoubleOrNull()
+        return null
+    }
+
+    private fun JSONObject.optStringSafe(key: String): String {
+        if (!has(key) || isNull(key)) return ""
+        return optString(key, "")
+    }
+
     suspend fun getRoster(section: String): List<Roster> = withContext(Dispatchers.IO) {
         val url = URL("$scriptUrl?action=getRoster&section=$section")
         val connection = url.openConnection() as HttpURLConnection
@@ -31,10 +52,12 @@ class NetworkManager {
             val rosterList = mutableListOf<Roster>()
             for (i in 0 until jsonArray.length()) {
                 val item = jsonArray.getJSONObject(i)
+                val roll = item.optIntOrNull("roll") ?: (i + 1)
+                val name = item.optStringSafe("name")
                 rosterList.add(
                     Roster(
-                        roll = item.getInt("roll"),
-                        name = item.getString("name"),
+                        roll = roll,
+                        name = name,
                         section = section
                     )
                 )
@@ -63,17 +86,24 @@ class NetworkManager {
             val entryList = mutableListOf<Entry>()
             for (i in 0 until jsonArray.length()) {
                 val item = jsonArray.getJSONObject(i)
-                entryList.add(
-                    Entry(
-                        roll = item.getInt("roll"),
-                        section = section,
-                        totalMarks = item.getInt("totalMarks"),
-                        failedCount = item.getInt("failedCount"),
-                        gpa = if (item.has("gpa") && !item.isNull("gpa")) item.getDouble("gpa") else null,
-                        syncState = SyncState.SYNCED,
-                        localUpdatedAt = System.currentTimeMillis()
+                val roll = item.optIntOrNull("roll") ?: continue
+                val totalMarks = item.optIntOrNull("totalMarks") ?: item.optIntOrNull("marks")
+                val failedCount = item.optIntOrNull("failedCount") ?: item.optIntOrNull("failed")
+                val gpa = item.optDoubleOrNull("gpa")
+                
+                if (totalMarks != null || failedCount != null || gpa != null) {
+                    entryList.add(
+                        Entry(
+                            roll = roll,
+                            section = section,
+                            totalMarks = totalMarks ?: 0,
+                            failedCount = failedCount ?: 0,
+                            gpa = gpa,
+                            syncState = SyncState.SYNCED,
+                            localUpdatedAt = System.currentTimeMillis()
+                        )
                     )
-                )
+                }
             }
             entryList
         } else {

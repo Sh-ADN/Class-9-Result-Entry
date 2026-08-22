@@ -27,8 +27,9 @@ class MainViewModel(
     private val sharedPrefs: SharedPreferences
 ) : ViewModel() {
 
-    private val _section = MutableStateFlow<String?>(sharedPrefs.getString("section", null))
-    val section: StateFlow<String?> = _section.asStateFlow()
+    private val defaultSection = sharedPrefs.getString("section", "A") ?: "A"
+    private val _section = MutableStateFlow<String>(defaultSection)
+    val section: StateFlow<String> = _section.asStateFlow()
     
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -40,18 +41,14 @@ class MainViewModel(
     ) { sec, query ->
         Pair(sec, query)
     }.flatMapLatest { (sec, query) ->
-        if (sec == null) {
-            flowOf(emptyList())
-        } else {
-            repository.getStudentResults(sec).map { list ->
-                if (query.isBlank()) {
-                    list
-                } else {
-                    val q = query.trim().lowercase()
-                    list.filter { 
-                        it.roster.roll.toString().contains(q) ||
-                        it.roster.name.lowercase().contains(q)
-                    }
+        repository.getStudentResults(sec).map { list ->
+            if (query.isBlank()) {
+                list
+            } else {
+                val q = query.trim().lowercase()
+                list.filter { 
+                    it.roster.roll.toString().contains(q) ||
+                    it.roster.name.lowercase().contains(q)
                 }
             }
         }
@@ -68,10 +65,8 @@ class MainViewModel(
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
     
     init {
-        if (_section.value != null) {
-            refreshData()
-            syncNow()
-        }
+        refreshData()
+        syncNow()
     }
     
     fun setSection(newSection: String) {
@@ -81,7 +76,7 @@ class MainViewModel(
     }
     
     fun refreshData() {
-        val sec = _section.value ?: return
+        val sec = _section.value
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
