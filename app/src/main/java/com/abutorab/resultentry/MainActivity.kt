@@ -58,6 +58,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalContext
 import com.abutorab.resultentry.data.StudentResult
 import com.abutorab.resultentry.ui.MainViewModel
 import com.abutorab.resultentry.ui.MainViewModelFactory
@@ -119,7 +121,7 @@ fun SplashScreen(onTimeout: () -> Unit) {
             modifier = Modifier.scale(scale.value).alpha(alpha.value)
         ) {
             Image(
-                painter = painterResource(id = R.drawable.app_result_icon_1787285063865),
+                painter = painterResource(id = R.drawable.app_icon_professional_padded_1787835605466),
                 contentDescription = "App Logo",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -262,6 +264,36 @@ fun RosterScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
+    var showExitDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    BackHandler {
+        showExitDialog = true
+    }
+
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("Exit App") },
+            text = { Text("Are you sure you want to exit the app?") },
+            confirmButton = { 
+                TextButton(
+                    onClick = { 
+                        showExitDialog = false
+                        (context as? android.app.Activity)?.finish() 
+                    }
+                ) {
+                    Text("Exit")
+                }
+            },
+            dismissButton = { 
+                TextButton(onClick = { showExitDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
