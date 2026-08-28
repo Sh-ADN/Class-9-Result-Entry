@@ -1,5 +1,6 @@
 package com.abutorab.resultentry
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -260,7 +262,11 @@ fun RosterScreen(
     
     val syncedCount = results.count { it.entry?.syncState == SyncState.SYNCED }
     val draftCount = results.count { it.entry?.syncState == SyncState.DRAFT }
+    val notStartedCount = results.count { it.entry == null }
     
+    var showOnlyNotStarted by remember { mutableStateOf(false) }
+    val displayResults = if (showOnlyNotStarted) results.filter { it.entry == null } else results
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
@@ -301,12 +307,32 @@ fun RosterScreen(
                     Column {
                         Text("Class 9 Result Entry")
                         Text(
-                            "Synced: $syncedCount • Drafts: $draftCount • Total: ${results.size}",
+                            "Synced: $syncedCount • Drafts: $draftCount • Pending: $notStartedCount",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val csvBuilder = java.lang.StringBuilder()
+                        csvBuilder.append("Roll,Name,Total Marks,Failed Count,GPA\n")
+                        results.forEach { res ->
+                            val entry = res.entry
+                            if (entry != null) {
+                                val gpaStr = entry.gpa?.toString() ?: ""
+                                csvBuilder.append("${res.roster.roll},\"${res.roster.name}\",${entry.totalMarks},${entry.failedCount},$gpaStr\n")
+                            }
+                        }
+                        val sendIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TITLE, "Section $currentSection Results")
+                            putExtra(Intent.EXTRA_TEXT, csvBuilder.toString())
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, "Export Section $currentSection"))
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export")
+                    }
                     IconButton(onClick = onNavigateToCombinedResult) {
                         Icon(Icons.Default.Assessment, contentDescription = "Combined Result")
                     }
@@ -338,18 +364,33 @@ fun RosterScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = currentSection == "A",
+                                onClick = { viewModel.setSection("A") },
+                                label = { Text("Section A") }
+                            )
+                            FilterChip(
+                                selected = currentSection == "B",
+                                onClick = { viewModel.setSection("B") },
+                                label = { Text("Section B") }
+                            )
+                        }
+                        
                         FilterChip(
-                            selected = currentSection == "A",
-                            onClick = { viewModel.setSection("A") },
-                            label = { Text("Section A") }
-                        )
-                        FilterChip(
-                            selected = currentSection == "B",
-                            onClick = { viewModel.setSection("B") },
-                            label = { Text("Section B") }
+                            selected = showOnlyNotStarted,
+                            onClick = { showOnlyNotStarted = !showOnlyNotStarted },
+                            label = { Text("Missing: $notStartedCount") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         )
                     }
 
@@ -378,7 +419,7 @@ fun RosterScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(results, key = { it.roster.roll }) { result ->
+                items(displayResults, key = { it.roster.roll }) { result ->
                     QuickEditStudentRow(
                         result = result,
                         onSave = { tm, fc, g ->

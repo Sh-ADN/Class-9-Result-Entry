@@ -27,13 +27,11 @@ class ResultRepository(
 
     suspend fun refreshEntries(section: String) {
         val remoteEntries = networkManager.getEntries(section)
-        val localDrafts = resultDao.getEntriesBySyncState(SyncState.DRAFT).associateBy { it.roll }
+        val localDrafts = resultDao.getEntriesBySyncState(SyncState.DRAFT)
+            .filter { it.section == section }
+            .associateBy { it.roll }
         val toInsert = remoteEntries.map { remote ->
-            if (localDrafts.containsKey(remote.roll) && localDrafts[remote.roll]!!.section == section) {
-                localDrafts[remote.roll]!! // Keep local draft
-            } else {
-                remote
-            }
+            localDrafts[remote.roll] ?: remote
         }
         resultDao.insertEntries(toInsert)
     }

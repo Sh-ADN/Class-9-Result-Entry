@@ -27,10 +27,9 @@ class MainViewModel(
     private val sharedPrefs: SharedPreferences
 ) : ViewModel() {
 
-    private val defaultSection = sharedPrefs.getString("section", "A") ?: "A"
-    private val _section = MutableStateFlow<String>(defaultSection)
-    val section: StateFlow<String> = _section.asStateFlow()
-    
+    private val _section = MutableStateFlow<String?>(sharedPrefs.getString("section", null))
+    val section: StateFlow<String?> = _section.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -38,45 +37,50 @@ class MainViewModel(
     val studentResults: StateFlow<List<StudentResult>> = combine(
         _section,
         _searchQuery
-    ) { sec, query ->
-        Pair(sec, query)
-    }.flatMapLatest { (sec, query) ->
-        repository.getStudentResults(sec).map { list ->
-            if (query.isBlank()) {
-                list
+    ) { sec, query -> Pair(sec, query) }
+        .flatMapLatest { (sec, query) ->
+            if (sec == null) {
+                flowOf(emptyList())
             } else {
-                val q = query.trim().lowercase()
-                list.filter { 
-                    it.roster.roll.toString().contains(q) ||
-                    it.roster.name.lowercase().contains(q)
+                repository.getStudentResults(sec).map { list ->
+                    if (query.isBlank()) {
+                        list
+                    } else {
+                        val q = query.trim().lowercase()
+                        list.filter {
+                            it.roster.roll.toString().contains(q) ||
+                            it.roster.name.lowercase().contains(q)
+                        }
+                    }
                 }
             }
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
-    
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-    
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
-    
+
     init {
-        refreshData()
-        syncNow()
+        if (_section.value != null) {
+            refreshData()
+            syncNow()
+        }
     }
-    
+
     fun setSection(newSection: String) {
         sharedPrefs.edit().putString("section", newSection).apply()
         _section.value = newSection
         refreshData()
     }
-    
+
     fun refreshData() {
-        val sec = _section.value
+        val sec = _section.value ?: return
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
@@ -89,7 +93,7 @@ class MainViewModel(
             }
         }
     }
-    
+
     fun syncNow() {
         viewModelScope.launch {
             _isSyncing.value = true
@@ -102,7 +106,7 @@ class MainViewModel(
             }
         }
     }
-    
+
     fun saveEntry(roll: Int, totalMarks: Int, failedCount: Int, gpa: Double?) {
         val sec = _section.value ?: return
         viewModelScope.launch {
@@ -116,7 +120,6 @@ class MainViewModel(
                 localUpdatedAt = System.currentTimeMillis()
             )
             repository.saveEntryLocally(entry)
-            // Silent background sync without locking UI state
             viewModelScope.launch {
                 try {
                     repository.syncDrafts()
