@@ -34,27 +34,29 @@ class MainViewModel(
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val studentResults: StateFlow<List<StudentResult>> = combine(
-        _section,
-        _searchQuery
-    ) { sec, query -> Pair(sec, query) }
-        .flatMapLatest { (sec, query) ->
+    val sectionResults: StateFlow<List<StudentResult>> = _section
+        .flatMapLatest { sec ->
             if (sec == null) {
                 flowOf(emptyList())
             } else {
-                repository.getStudentResults(sec).map { list ->
-                    if (query.isBlank()) {
-                        list
-                    } else {
-                        val q = query.trim().lowercase()
-                        list.filter {
-                            it.roster.roll.toString().contains(q) ||
-                            it.roster.name.lowercase().contains(q)
-                        }
-                    }
-                }
+                repository.getStudentResults(sec)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val studentResults: StateFlow<List<StudentResult>> = combine(
+        sectionResults,
+        _searchQuery
+    ) { list, query ->
+        if (query.isBlank()) {
+            list
+        } else {
+            val q = query.trim().lowercase()
+            list.filter {
+                it.roster.roll.toString().contains(q) ||
+                it.roster.name.lowercase().contains(q)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query

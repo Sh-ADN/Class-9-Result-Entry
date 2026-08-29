@@ -123,9 +123,9 @@ fun SplashScreen(onTimeout: () -> Unit) {
             modifier = Modifier.scale(scale.value).alpha(alpha.value)
         ) {
             Image(
-                painter = painterResource(id = R.drawable.app_icon_professional_padded_1787835605466),
+                painter = painterResource(id = R.drawable.app_icon_perfect_pro_1787968956161),
                 contentDescription = "App Logo",
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(150.dp)
                     .clip(RoundedCornerShape(24.dp))
@@ -255,14 +255,15 @@ fun RosterScreen(
     onNavigateToCombinedResult: () -> Unit
 ) {
     val results by viewModel.studentResults.collectAsState()
+    val sectionResults by viewModel.sectionResults.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val currentSection by viewModel.section.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     
-    val syncedCount = results.count { it.entry?.syncState == SyncState.SYNCED }
-    val draftCount = results.count { it.entry?.syncState == SyncState.DRAFT }
-    val notStartedCount = results.count { it.entry == null }
+    val syncedCount = sectionResults.count { it.entry?.syncState == SyncState.SYNCED }
+    val draftCount = sectionResults.count { it.entry?.syncState == SyncState.DRAFT }
+    val notStartedCount = sectionResults.count { it.entry == null }
     
     var showOnlyNotStarted by remember { mutableStateOf(false) }
     val displayResults = if (showOnlyNotStarted) results.filter { it.entry == null } else results
