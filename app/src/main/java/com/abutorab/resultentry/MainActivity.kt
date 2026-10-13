@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -230,19 +231,90 @@ fun SetupScreen(
                 onClick = { onSectionSelected("A") },
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("Section A", style = MaterialTheme.typography.titleMedium)
+                Text("Section A — জনাব মেজবা উদ্দিন", style = MaterialTheme.typography.titleMedium)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { onSectionSelected("B") },
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("Section B", style = MaterialTheme.typography.titleMedium)
+                Text("Section B — জনাব অনন্য দেবনাথ", style = MaterialTheme.typography.titleMedium)
             }
             if (currentSection != null) {
+                val teacherName = if (currentSection == "A") "জনাব মেজবা উদ্দিন" else "জনাব অনন্য দেবনাথ"
                 Spacer(modifier = Modifier.height(32.dp))
-                Text("Currently selected: Section $currentSection")
+                Text("Currently selected: Section $currentSection ($teacherName)")
             }
+        }
+    }
+}
+
+fun Int.toBengaliDigits(): String {
+    val bengaliDigits = charArrayOf('০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯')
+    return this.toString().map { if (it in '0'..'9') bengaliDigits[it - '0'] else it }.joinToString("")
+}
+
+enum class ConsiderationCategory {
+    MERIT,
+    FIRST,
+    SECOND,
+    SPECIAL
+}
+
+data class Quint<A, B, C, D, E>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E
+)
+
+@Composable
+fun CategoryCounterBadge(
+    title: String,
+    count: Int,
+    isSelected: Boolean,
+    containerColor: Color,
+    contentColor: Color,
+    selectedContainerColor: Color,
+    selectedContentColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bg = if (isSelected) selectedContainerColor else containerColor
+    val textCol = if (isSelected) selectedContentColor else contentColor
+    val borderCol = if (isSelected) selectedContentColor.copy(alpha = 0.6f) else contentColor.copy(alpha = 0.25f)
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = borderCol,
+                shape = RoundedCornerShape(10.dp)
+            ),
+        color = bg,
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = textCol,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = count.toBengaliDigits(),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = textCol,
+                maxLines = 1
+            )
         }
     }
 }
@@ -265,8 +337,50 @@ fun RosterScreen(
     val draftCount = sectionResults.count { it.entry?.syncState == SyncState.DRAFT }
     val notStartedCount = sectionResults.count { it.entry == null }
     
+    val meritCount = sectionResults.count { it.entry != null && it.entry.failedCount == 0 }
+    val firstCount = sectionResults.count { it.entry != null && it.entry.failedCount == 1 }
+    val secondCount = sectionResults.count { it.entry != null && it.entry.failedCount == 2 }
+    val specialCount = sectionResults.count { it.entry != null && it.entry.failedCount >= 3 }
+    
     var showOnlyNotStarted by remember { mutableStateOf(false) }
-    val displayResults = if (showOnlyNotStarted) results.filter { it.entry == null } else results
+    var selectedCategory by remember { mutableStateOf<ConsiderationCategory?>(null) }
+
+    LaunchedEffect(currentSection) {
+        selectedCategory = null
+        showOnlyNotStarted = false
+    }
+
+    val rankMap = remember(sectionResults) {
+        val enteredStudents = sectionResults
+            .filter { it.entry != null }
+            .sortedWith(
+                compareByDescending<StudentResult> { it.entry?.totalMarks ?: 0 }
+                    .thenBy { it.roster.roll }
+            )
+        enteredStudents.mapIndexed { index, student ->
+            student.roster.roll to (index + 1)
+        }.toMap()
+    }
+
+    val filteredResults = when {
+        showOnlyNotStarted -> results.filter { it.entry == null }
+        selectedCategory == ConsiderationCategory.MERIT -> results.filter { it.entry != null && it.entry.failedCount == 0 }
+        selectedCategory == ConsiderationCategory.FIRST -> results.filter { it.entry != null && it.entry.failedCount == 1 }
+        selectedCategory == ConsiderationCategory.SECOND -> results.filter { it.entry != null && it.entry.failedCount == 2 }
+        selectedCategory == ConsiderationCategory.SPECIAL -> results.filter { it.entry != null && it.entry.failedCount >= 3 }
+        else -> results
+    }
+
+    val displayResults = if (selectedCategory != null) {
+        filteredResults.sortedWith(
+            compareByDescending<StudentResult> { it.entry?.totalMarks ?: 0 }
+                .thenBy { it.roster.roll }
+        )
+    } else {
+        filteredResults
+    }
+
+    val isDark = isSystemInDarkTheme()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -306,11 +420,94 @@ fun RosterScreen(
             TopAppBar(
                 title = { 
                     Column {
-                        Text("Class 9 Result Entry")
-                        Text(
-                            "Synced: $syncedCount • Drafts: $draftCount • Pending: $notStartedCount",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Class 9 Result Entry",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            if (currentSection != null) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Section $currentSection",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Synced badge
+                            Surface(
+                                color = if (isDark) Color(0xFF102A43) else Color(0xFFE3F2FD),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isDark) Color(0xFF1D4ED8) else Color(0xFF90CAF9))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(if (isDark) Color(0xFF60A5FA) else Color(0xFF1976D2), CircleShape)
+                                    )
+                                    Text(
+                                        text = "Synced: $syncedCount",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = if (isDark) Color(0xFF93C5FD) else Color(0xFF0D47A1)
+                                    )
+                                }
+                            }
+                            
+                            // Draft badge
+                            Surface(
+                                color = if (isDark) Color(0xFF38230B) else Color(0xFFFFF3E0),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isDark) Color(0xFFB45309) else Color(0xFFFFB74D))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(if (isDark) Color(0xFFFBBF24) else Color(0xFFF57C00), CircleShape)
+                                    )
+                                    Text(
+                                        text = "Drafts: $draftCount",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = if (isDark) Color(0xFFFDE68A) else Color(0xFFE65100)
+                                    )
+                                }
+                            }
+
+                            // Pending badge
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Pending: $notStartedCount",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 },
                 actions = {
@@ -356,7 +553,7 @@ fun RosterScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            // Interactive Header for Section Selection & Instant Roll/Name Search
+            // Interactive Header for Section Selection, Live Consideration Summary & Instant Search
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
@@ -368,25 +565,23 @@ fun RosterScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilterChip(
-                                selected = currentSection == "A",
-                                onClick = { viewModel.setSection("A") },
-                                label = { Text("Section A") }
+                        val teacherName = if (currentSection == "A") "জনাব মেজবা উদ্দিন" else if (currentSection == "B") "জনাব অনন্য দেবনাথ" else ""
+                        if (teacherName.isNotEmpty()) {
+                            Text(
+                                text = "শ্রেণি শিক্ষক: $teacherName",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            FilterChip(
-                                selected = currentSection == "B",
-                                onClick = { viewModel.setSection("B") },
-                                label = { Text("Section B") }
-                            )
+                        } else {
+                            Spacer(modifier = Modifier.width(1.dp))
                         }
                         
                         FilterChip(
                             selected = showOnlyNotStarted,
-                            onClick = { showOnlyNotStarted = !showOnlyNotStarted },
+                            onClick = { 
+                                showOnlyNotStarted = !showOnlyNotStarted 
+                                if (showOnlyNotStarted) selectedCategory = null
+                            },
                             label = { Text("Missing: $notStartedCount") },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
@@ -395,7 +590,72 @@ fun RosterScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Fixed Live Consideration Category Summary Bar (মেধা, ১ম বিবেচনা, ২য় বিবেচনা, বিশেষ বিবেচনা)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CategoryCounterBadge(
+                            title = "মেধা",
+                            count = meritCount,
+                            isSelected = selectedCategory == ConsiderationCategory.MERIT,
+                            containerColor = if (isDark) Color(0xFF1B3822) else Color(0xFFE8F5E9),
+                            contentColor = if (isDark) Color(0xFFA5D6A7) else Color(0xFF1B5E20),
+                            selectedContainerColor = Color(0xFF2E7D32),
+                            selectedContentColor = Color.White,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                selectedCategory = if (selectedCategory == ConsiderationCategory.MERIT) null else ConsiderationCategory.MERIT
+                                if (selectedCategory != null) showOnlyNotStarted = false
+                            }
+                        )
+                        CategoryCounterBadge(
+                            title = "১ম",
+                            count = firstCount,
+                            isSelected = selectedCategory == ConsiderationCategory.FIRST,
+                            containerColor = if (isDark) Color(0xFF102A43) else Color(0xFFE1F5FE),
+                            contentColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF0277BD),
+                            selectedContainerColor = Color(0xFF0288D1),
+                            selectedContentColor = Color.White,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                selectedCategory = if (selectedCategory == ConsiderationCategory.FIRST) null else ConsiderationCategory.FIRST
+                                if (selectedCategory != null) showOnlyNotStarted = false
+                            }
+                        )
+                        CategoryCounterBadge(
+                            title = "২য়",
+                            count = secondCount,
+                            isSelected = selectedCategory == ConsiderationCategory.SECOND,
+                            containerColor = if (isDark) Color(0xFF382D16) else Color(0xFFFFF8E1),
+                            contentColor = if (isDark) Color(0xFFFFCC80) else Color(0xFFE65100),
+                            selectedContainerColor = Color(0xFFF57C00),
+                            selectedContentColor = Color.White,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                selectedCategory = if (selectedCategory == ConsiderationCategory.SECOND) null else ConsiderationCategory.SECOND
+                                if (selectedCategory != null) showOnlyNotStarted = false
+                            }
+                        )
+                        CategoryCounterBadge(
+                            title = "বিশেষ",
+                            count = specialCount,
+                            isSelected = selectedCategory == ConsiderationCategory.SPECIAL,
+                            containerColor = if (isDark) Color(0xFF3B1629) else Color(0xFFFCE4EC),
+                            contentColor = if (isDark) Color(0xFFF48FB1) else Color(0xFF880E4F),
+                            selectedContainerColor = Color(0xFFC2185B),
+                            selectedContentColor = Color.White,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                selectedCategory = if (selectedCategory == ConsiderationCategory.SPECIAL) null else ConsiderationCategory.SPECIAL
+                                if (selectedCategory != null) showOnlyNotStarted = false
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = searchQuery,
@@ -413,6 +673,46 @@ fun RosterScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
+
+                    AnimatedVisibility(
+                        visible = selectedCategory != null,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                val catTitle = when (selectedCategory) {
+                                    ConsiderationCategory.MERIT -> "মেধাতালিকা (০ ফেল)"
+                                    ConsiderationCategory.FIRST -> "১ম বিবেচনা (১ ফেল)"
+                                    ConsiderationCategory.SECOND -> "২য় বিবেচনা (২ ফেল)"
+                                    ConsiderationCategory.SPECIAL -> "বিশেষ বিবেচনা (৩+ ফেল)"
+                                    null -> ""
+                                }
+                                Text(
+                                    text = "$catTitle • নম্বর অনুসারে সাজানো (Rank #)",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                TextButton(
+                                    onClick = { selectedCategory = null },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Text("রিসেট", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -420,16 +720,52 @@ fun RosterScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(displayResults, key = { it.roster.roll }) { result ->
-                    QuickEditStudentRow(
-                        result = result,
-                        onSave = { tm, fc, g ->
-                            viewModel.saveEntry(result.roster.roll, tm, fc, g)
-                        },
-                        showSnackbar = { msg ->
-                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                if (displayResults.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = when {
+                                        selectedCategory != null -> "এই বিবেচনা ক্যাটাগরিতে কোনো শিক্ষার্থী নেই"
+                                        showOnlyNotStarted -> "সব শিক্ষার্থীর ফলাফল ইতিমধ্যে এন্ট্রি করা হয়েছে"
+                                        searchQuery.isNotBlank() -> "কোনো মিল পাওয়া যায়নি"
+                                        else -> "কোনো শিক্ষার্থী পাওয়া যায়নি"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (selectedCategory != null || showOnlyNotStarted || searchQuery.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextButton(onClick = {
+                                        selectedCategory = null
+                                        showOnlyNotStarted = false
+                                        viewModel.setSearchQuery("")
+                                    }) {
+                                        Text("ফিল্টার রিসেট করুন")
+                                    }
+                                }
+                            }
                         }
-                    )
+                    }
+                } else {
+                    items(displayResults, key = { it.roster.roll }) { result ->
+                        val serialRank = if (selectedCategory != null) rankMap[result.roster.roll] else null
+                        QuickEditStudentRow(
+                            result = result,
+                            serialRank = serialRank,
+                            onSave = { tm, fc, g ->
+                                viewModel.saveEntry(result.roster.roll, tm, fc, g)
+                            },
+                            showSnackbar = { msg ->
+                                scope.launch { snackbarHostState.showSnackbar(msg) }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -440,9 +776,11 @@ fun RosterScreen(
 @Composable
 fun QuickEditStudentRow(
     result: StudentResult,
+    serialRank: Int? = null,
     onSave: (Int, Int, Double?) -> Unit,
     showSnackbar: (String) -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
     var isEdited by remember(result.roster.roll) { mutableStateOf(false) }
     var saveStatus by remember(result.roster.roll) { mutableStateOf("idle") } // "idle", "saving", "saved"
 
@@ -546,10 +884,31 @@ fun QuickEditStudentRow(
                 verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                    Text(
-                        text = "Roll ${result.roster.roll} — ${result.roster.name}",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (serialRank != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = "#$serialRank",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Roll ${result.roster.roll} — ${result.roster.name}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
                     Spacer(modifier = Modifier.height(6.dp))
                     
                     // Reactive Status Indicator Badge (Saving... / Saved / Synced / Draft)
@@ -603,22 +962,51 @@ fun QuickEditStudentRow(
                                 }
                             }
                             else -> {
-                                val (bgColor, textColor, text) = when (result.entry?.syncState) {
-                                    SyncState.SYNCED -> Triple(Color(0xFFE3F2FD), Color(0xFF1565C0), "Synced")
-                                    SyncState.DRAFT -> Triple(Color(0xFFFFF3E0), Color(0xFFE65100), "Draft")
-                                    SyncState.ERROR -> Triple(Color(0xFFFFEBEE), Color(0xFFC62828), "Sync Error")
-                                    null -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "Not Started")
+                                val (bgColor, textColor, borderColor, dotColor, text) = when (result.entry?.syncState) {
+                                    SyncState.SYNCED -> if (isDark) {
+                                        Quint(Color(0xFF102A43), Color(0xFF93C5FD), Color(0xFF1D4ED8), Color(0xFF60A5FA), "Synced")
+                                    } else {
+                                        Quint(Color(0xFFE3F2FD), Color(0xFF0D47A1), Color(0xFF90CAF9), Color(0xFF1976D2), "Synced")
+                                    }
+                                    SyncState.DRAFT -> if (isDark) {
+                                        Quint(Color(0xFF38230B), Color(0xFFFDE68A), Color(0xFFB45309), Color(0xFFFBBF24), "Draft")
+                                    } else {
+                                        Quint(Color(0xFFFFF3E0), Color(0xFFBF360C), Color(0xFFFFB74D), Color(0xFFF57C00), "Draft")
+                                    }
+                                    SyncState.ERROR -> if (isDark) {
+                                        Quint(Color(0xFF3B1219), Color(0xFFFECDD3), Color(0xFFBE123C), Color(0xFFF43F5E), "Sync Error")
+                                    } else {
+                                        Quint(Color(0xFFFFEBEE), Color(0xFFB71C1C), Color(0xFFEF9A9A), Color(0xFFD32F2F), "Sync Error")
+                                    }
+                                    null -> Quint(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        MaterialTheme.colorScheme.outline,
+                                        "Not Started"
+                                    )
                                 }
                                 Surface(
                                     color = bgColor,
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, borderColor)
                                 ) {
-                                    Text(
-                                        text = text,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                        color = textColor,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(dotColor, CircleShape)
+                                        )
+                                        Text(
+                                            text = text,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = textColor
+                                        )
+                                    }
                                 }
                             }
                         }
