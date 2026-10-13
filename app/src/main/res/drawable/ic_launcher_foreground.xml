@@ -3,6 +3,6 @@
     <item
         android:width="108dp"
         android:height="108dp"
-        android:drawable="@drawable/app_icon_perfect_pro_1787968956161"
+        android:drawable="@drawable/app_icon_crest_perfect"
         android:gravity="center" />
 </layer-list>

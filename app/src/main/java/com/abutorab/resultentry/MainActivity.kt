@@ -7,15 +7,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +36,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -52,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import com.abutorab.resultentry.data.SyncState
@@ -333,14 +339,14 @@ fun RosterScreen(
     val currentSection by viewModel.section.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     
-    val syncedCount = sectionResults.count { it.entry?.syncState == SyncState.SYNCED }
-    val draftCount = sectionResults.count { it.entry?.syncState == SyncState.DRAFT }
-    val notStartedCount = sectionResults.count { it.entry == null }
+    val syncedCount = remember(sectionResults) { sectionResults.count { it.entry?.syncState == SyncState.SYNCED } }
+    val draftCount = remember(sectionResults) { sectionResults.count { it.entry?.syncState == SyncState.DRAFT } }
+    val notStartedCount = remember(sectionResults) { sectionResults.count { it.entry == null } }
     
-    val meritCount = sectionResults.count { it.entry != null && it.entry.failedCount == 0 }
-    val firstCount = sectionResults.count { it.entry != null && it.entry.failedCount == 1 }
-    val secondCount = sectionResults.count { it.entry != null && it.entry.failedCount == 2 }
-    val specialCount = sectionResults.count { it.entry != null && it.entry.failedCount >= 3 }
+    val meritCount = remember(sectionResults) { sectionResults.count { it.entry != null && it.entry.failedCount == 0 } }
+    val firstCount = remember(sectionResults) { sectionResults.count { it.entry != null && it.entry.failedCount == 1 } }
+    val secondCount = remember(sectionResults) { sectionResults.count { it.entry != null && it.entry.failedCount == 2 } }
+    val specialCount = remember(sectionResults) { sectionResults.count { it.entry != null && it.entry.failedCount >= 3 } }
     
     var showOnlyNotStarted by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<ConsiderationCategory?>(null) }
@@ -362,30 +368,35 @@ fun RosterScreen(
         }.toMap()
     }
 
-    val filteredResults = when {
-        showOnlyNotStarted -> results.filter { it.entry == null }
-        selectedCategory == ConsiderationCategory.MERIT -> results.filter { it.entry != null && it.entry.failedCount == 0 }
-        selectedCategory == ConsiderationCategory.FIRST -> results.filter { it.entry != null && it.entry.failedCount == 1 }
-        selectedCategory == ConsiderationCategory.SECOND -> results.filter { it.entry != null && it.entry.failedCount == 2 }
-        selectedCategory == ConsiderationCategory.SPECIAL -> results.filter { it.entry != null && it.entry.failedCount >= 3 }
-        else -> results
-    }
-
-    val displayResults = if (selectedCategory != null) {
-        filteredResults.sortedWith(
-            compareByDescending<StudentResult> { it.entry?.totalMarks ?: 0 }
-                .thenBy { it.roster.roll }
-        )
-    } else {
-        filteredResults
+    val displayResults = remember(results, showOnlyNotStarted, selectedCategory) {
+        val filtered = when {
+            showOnlyNotStarted -> results.filter { it.entry == null }
+            selectedCategory == ConsiderationCategory.MERIT -> results.filter { it.entry != null && it.entry.failedCount == 0 }
+            selectedCategory == ConsiderationCategory.FIRST -> results.filter { it.entry != null && it.entry.failedCount == 1 }
+            selectedCategory == ConsiderationCategory.SECOND -> results.filter { it.entry != null && it.entry.failedCount == 2 }
+            selectedCategory == ConsiderationCategory.SPECIAL -> results.filter { it.entry != null && it.entry.failedCount >= 3 }
+            else -> results
+        }
+        if (selectedCategory != null) {
+            filtered.sortedWith(
+                compareByDescending<StudentResult> { it.entry?.totalMarks ?: 0 }
+                    .thenBy { it.roster.roll }
+            )
+        } else {
+            filtered
+        }
     }
 
     val isDark = isSystemInDarkTheme()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val showSnackbarMsg: (String) -> Unit = remember {
+        { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+    }
     
     var showExitDialog by remember { mutableStateOf(false) }
+    var isActionsExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     BackHandler {
@@ -426,7 +437,8 @@ fun RosterScreen(
                         ) {
                             Text(
                                 "Class 9 Result Entry",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                maxLines = 1
                             )
                             if (currentSection != null) {
                                 Surface(
@@ -437,7 +449,9 @@ fun RosterScreen(
                                         text = "Section $currentSection",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        softWrap = false,
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -511,37 +525,108 @@ fun RosterScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        val csvBuilder = java.lang.StringBuilder()
-                        csvBuilder.append("Roll,Name,Total Marks,Failed Count,GPA\n")
-                        results.forEach { res ->
-                            val entry = res.entry
-                            if (entry != null) {
-                                val gpaStr = entry.gpa?.toString() ?: ""
-                                csvBuilder.append("${res.roster.roll},\"${res.roster.name}\",${entry.totalMarks},${entry.failedCount},$gpaStr\n")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Collapsible arrow button (‹ when hidden, › when expanded)
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isActionsExpanded) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (isActionsExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else Color.Transparent
+                            ),
+                            tonalElevation = 2.dp,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { isActionsExpanded = !isActionsExpanded },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("toggle_actions_arrow_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isActionsExpanded) Icons.Default.ChevronRight else Icons.Default.ChevronLeft,
+                                    contentDescription = if (isActionsExpanded) "Hide tools" else "Show tools",
+                                    tint = if (isActionsExpanded) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
-                        val sendIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_TITLE, "Section $currentSection Results")
-                            putExtra(Intent.EXTRA_TEXT, csvBuilder.toString())
-                            type = "text/plain"
+
+                        // Smoothly animated action icons
+                        AnimatedVisibility(
+                            visible = isActionsExpanded,
+                            enter = fadeIn(animationSpec = tween(220)) + expandHorizontally(
+                                expandFrom = Alignment.Start,
+                                animationSpec = tween(260)
+                            ),
+                            exit = fadeOut(animationSpec = tween(180)) + shrinkHorizontally(
+                                shrinkTowards = Alignment.Start,
+                                animationSpec = tween(220)
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(0.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        val csvBuilder = java.lang.StringBuilder()
+                                        csvBuilder.append("Roll,Name,Total Marks,Failed Count,GPA\n")
+                                        results.forEach { res ->
+                                            val entry = res.entry
+                                            if (entry != null) {
+                                                val gpaStr = entry.gpa?.toString() ?: ""
+                                                csvBuilder.append("${res.roster.roll},\"${res.roster.name}\",${entry.totalMarks},${entry.failedCount},$gpaStr\n")
+                                            }
+                                        }
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TITLE, "Section $currentSection Results")
+                                            putExtra(Intent.EXTRA_TEXT, csvBuilder.toString())
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Export Section $currentSection"))
+                                    },
+                                    modifier = Modifier.size(38.dp).testTag("action_export_button")
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = "Export", modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(
+                                    onClick = onNavigateToCombinedResult,
+                                    modifier = Modifier.size(38.dp).testTag("action_combined_button")
+                                ) {
+                                    Icon(Icons.Default.Assessment, contentDescription = "Combined Result", modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(
+                                    onClick = { viewModel.refreshData() },
+                                    modifier = Modifier.size(38.dp).testTag("action_refresh_button")
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Roster", modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(
+                                    onClick = { viewModel.syncNow() },
+                                    modifier = Modifier.size(38.dp).testTag("action_sync_button")
+                                ) {
+                                    Icon(Icons.Default.Sync, contentDescription = "Sync Now", modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(
+                                    onClick = onNavigateToSettings,
+                                    modifier = Modifier.size(38.dp).testTag("action_settings_button")
+                                ) {
+                                    Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(20.dp))
+                                }
+                            }
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, "Export Section $currentSection"))
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "Export")
-                    }
-                    IconButton(onClick = onNavigateToCombinedResult) {
-                        Icon(Icons.Default.Assessment, contentDescription = "Combined Result")
-                    }
-                    IconButton(onClick = { viewModel.refreshData() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Roster")
-                    }
-                    IconButton(onClick = { viewModel.syncNow() }) {
-                        Icon(Icons.Default.Sync, contentDescription = "Sync Now")
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -753,17 +838,17 @@ fun RosterScreen(
                         }
                     }
                 } else {
-                    items(displayResults, key = { it.roster.roll }) { result ->
+                    items(
+                        items = displayResults,
+                        key = { it.roster.roll },
+                        contentType = { "student_row" }
+                    ) { result ->
                         val serialRank = if (selectedCategory != null) rankMap[result.roster.roll] else null
                         QuickEditStudentRow(
                             result = result,
                             serialRank = serialRank,
-                            onSave = { tm, fc, g ->
-                                viewModel.saveEntry(result.roster.roll, tm, fc, g)
-                            },
-                            showSnackbar = { msg ->
-                                scope.launch { snackbarHostState.showSnackbar(msg) }
-                            }
+                            onSave = viewModel::saveEntry,
+                            showSnackbar = showSnackbarMsg
                         )
                     }
                 }
@@ -777,7 +862,7 @@ fun RosterScreen(
 fun QuickEditStudentRow(
     result: StudentResult,
     serialRank: Int? = null,
-    onSave: (Int, Int, Double?) -> Unit,
+    onSave: (Int, Int, Int, Double?) -> Unit,
     showSnackbar: (String) -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
@@ -798,18 +883,21 @@ fun QuickEditStudentRow(
 
     LaunchedEffect(result.entry) {
         if (!isEdited && result.entry != null) {
-            totalMarks = result.entry.totalMarks.toString()
-            failedCount = result.entry.failedCount
-            gpaDigits = result.entry.gpa?.let { gpaValue ->
+            val newTm = result.entry.totalMarks.toString()
+            val newFc = result.entry.failedCount
+            val newGpa = result.entry.gpa?.let { gpaValue ->
                 var str = gpaValue.toString()
                 if (str.endsWith(".0")) str = str.substring(0, str.length - 2)
                 str.replace(".", "")
             } ?: ""
+            if (totalMarks != newTm) totalMarks = newTm
+            if (failedCount != newFc) failedCount = newFc
+            if (gpaDigits != newGpa) gpaDigits = newGpa
         }
     }
 
-    LaunchedEffect(result.entry?.syncState) {
-        if (result.entry?.syncState == SyncState.ERROR) {
+    if (result.entry?.syncState == SyncState.ERROR) {
+        LaunchedEffect(Unit) {
             showSnackbar("Failed to sync roll ${result.roster.roll} — will retry.")
         }
     }
@@ -825,46 +913,59 @@ fun QuickEditStudentRow(
     }
     val isGpaInvalid = gpaDigits.isNotEmpty() && (gpaDouble == null || gpaDouble !in 0.0..5.0)
 
-    // Debounced Auto-Save Loop (800ms) with reactive saveStatus feedback
-    LaunchedEffect(totalMarks, failedCount, gpaDigits) {
-        if (!isEdited) return@LaunchedEffect
-        if (isMarksInvalid || isGpaInvalid) return@LaunchedEffect
+    // Debounced Auto-Save Loop (800ms) - ONLY active when user has modified data, avoiding coroutine churn during scrolling
+    if (isEdited) {
+        LaunchedEffect(totalMarks, failedCount, gpaDigits) {
+            if (isMarksInvalid || isGpaInvalid) return@LaunchedEffect
 
-        val tm = totalMarks.toIntOrNull()
-        val fc = failedCount
-        val g = gpaDouble
+            val tm = totalMarks.toIntOrNull()
+            val fc = failedCount
+            val g = gpaDouble
 
-        if (tm != null && fc != null) {
-            if (fc > 0 || (fc == 0 && g != null)) {
-                saveStatus = "saving"
-                delay(800)
-                onSave(tm, fc, if (fc == 0) g else null)
-                isEdited = false
-                saveStatus = "saved"
-                delay(2000)
-                if (saveStatus == "saved") {
-                    saveStatus = "idle"
+            if (tm != null && fc != null) {
+                if (fc > 0 || (fc == 0 && g != null)) {
+                    saveStatus = "saving"
+                    delay(800)
+                    onSave(result.roster.roll, tm, fc, if (fc == 0) g else null)
+                    isEdited = false
+                    saveStatus = "saved"
+                    delay(2000)
+                    if (saveStatus == "saved") {
+                        saveStatus = "idle"
+                    }
                 }
             }
         }
     }
 
-    val currentData by rememberUpdatedState(Triple(totalMarks, failedCount, gpaDouble))
-    val currentValidity by rememberUpdatedState(Pair(isMarksInvalid, isGpaInvalid))
-    val currentIsEdited by rememberUpdatedState(isEdited)
+    // Keep latest edit values for onDispose save without creating Triple/Pair allocations on every frame
+    val onSaveLatest by rememberUpdatedState(onSave)
+    val latestValues = remember(result.roster.roll) {
+        object {
+            var edited = false
+            var tmStr = ""
+            var fc: Int? = null
+            var g: Double? = null
+            var marksInvalid = false
+            var gpaInvalid = false
+        }
+    }
+    latestValues.edited = isEdited
+    latestValues.tmStr = totalMarks
+    latestValues.fc = failedCount
+    latestValues.g = gpaDouble
+    latestValues.marksInvalid = isMarksInvalid
+    latestValues.gpaInvalid = isGpaInvalid
     
     DisposableEffect(result.roster.roll) {
         onDispose {
-            if (currentIsEdited) {
-                val (tmStr, fc, g) = currentData
-                val (marksInvalid, gpaInvalid) = currentValidity
-                if (!marksInvalid && !gpaInvalid) {
-                    val tm = tmStr.toIntOrNull()
-                    if (tm != null && fc != null) {
-                        if (fc > 0 || (fc == 0 && g != null)) {
-                            onSave(tm, fc, if (fc == 0) g else null)
-                            isEdited = false
-                        }
+            if (latestValues.edited && !latestValues.marksInvalid && !latestValues.gpaInvalid) {
+                val tm = latestValues.tmStr.toIntOrNull()
+                val fc = latestValues.fc
+                val g = latestValues.g
+                if (tm != null && fc != null) {
+                    if (fc > 0 || (fc == 0 && g != null)) {
+                        onSaveLatest(result.roster.roll, tm, fc, if (fc == 0) g else null)
                     }
                 }
             }
@@ -875,7 +976,7 @@ fun QuickEditStudentRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -911,18 +1012,17 @@ fun QuickEditStudentRow(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     
-                    // Reactive Status Indicator Badge (Saving... / Saved / Synced / Draft)
+                    // Status Indicator Badge (Saving... / Saved / Synced / Draft / Not Started)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         when (saveStatus) {
                             "saving" -> {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(12.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(12.dp),
                                             strokeWidth = 1.5.dp,
@@ -938,14 +1038,13 @@ fun QuickEditStudentRow(
                                 }
                             }
                             "saved" -> {
-                                Surface(
-                                    color = Color(0xFFE8F5E9),
-                                    shape = RoundedCornerShape(12.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFE8F5E9))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
                                             contentDescription = "Saved",
@@ -986,13 +1085,14 @@ fun QuickEditStudentRow(
                                         "Not Started"
                                     )
                                 }
-                                Surface(
-                                    color = bgColor,
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = BorderStroke(1.dp, borderColor)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(bgColor)
+                                        .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
@@ -1025,7 +1125,7 @@ fun QuickEditStudentRow(
                     modifier = Modifier.width(120.dp),
                     singleLine = true,
                     isError = isMarksInvalid,
-                    supportingText = { if (isMarksInvalid) Text("0-1150") }
+                    supportingText = if (isMarksInvalid) { { Text("0-1150") } } else null
                 )
             }
 
@@ -1038,22 +1138,37 @@ fun QuickEditStudentRow(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Pill-style Numeric Selectors (0-9)
-            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                (0..9).forEach { number ->
-                    FailedSubjectPill(
-                        number = number,
-                        isSelected = failedCount == number,
-                        onClick = { 
-                            failedCount = number
-                            isEdited = true
-                        }
-                    )
+            // Efficient 5x2 grid of numeric selectors (0-9) - avoids heavy dynamic FlowRow measure cycles
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    (0..4).forEach { number ->
+                        FailedSubjectPill(
+                            number = number,
+                            isSelected = failedCount == number,
+                            onClick = { 
+                                failedCount = number
+                                isEdited = true
+                            }
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    (5..9).forEach { number ->
+                        FailedSubjectPill(
+                            number = number,
+                            isSelected = failedCount == number,
+                            onClick = { 
+                                failedCount = number
+                                isEdited = true
+                            }
+                        )
+                    }
                 }
             }
 
@@ -1098,42 +1213,39 @@ fun FailedSubjectPill(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val backgroundColor by animateColorAsState(
-        targetValue = when {
-            isSelected && number == 0 -> Color(0xFFE8F5E9)
-            isSelected -> Color(0xFFFFEBEE)
-            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        },
-        label = "pillBg"
-    )
-    val contentColor by animateColorAsState(
-        targetValue = when {
-            isSelected && number == 0 -> Color(0xFF2E7D32)
-            isSelected -> Color(0xFFC62828)
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        label = "pillFg"
-    )
+    val backgroundColor = when {
+        isSelected && number == 0 -> Color(0xFFE8F5E9)
+        isSelected -> Color(0xFFFFEBEE)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val contentColor = when {
+        isSelected && number == 0 -> Color(0xFF2E7D32)
+        isSelected -> Color(0xFFC62828)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val borderColor = if (isSelected) {
         if (number == 0) Color(0xFF2E7D32) else Color(0xFFC62828)
     } else Color.Transparent
 
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = backgroundColor,
-        border = BorderStroke(if (isSelected) 1.5.dp else 0.dp, borderColor),
-        modifier = Modifier.size(38.dp)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = number.toString(),
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                ),
-                color = contentColor
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .then(
+                if (isSelected) Modifier.border(1.5.dp, borderColor, CircleShape)
+                else Modifier
             )
-        }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = number.toString(),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            ),
+            color = contentColor
+        )
     }
 }
 
@@ -1146,10 +1258,12 @@ fun GpaInputBoxes(
     val focusRequesters = remember { List(3) { FocusRequester() } }
     var pendingFocus by remember { mutableStateOf<Int?>(null) }
 
-    LaunchedEffect(pendingFocus) {
-        pendingFocus?.let {
-            focusRequesters[it].requestFocus()
-            pendingFocus = null
+    if (pendingFocus != null) {
+        LaunchedEffect(pendingFocus) {
+            pendingFocus?.let {
+                focusRequesters[it].requestFocus()
+                pendingFocus = null
+            }
         }
     }
 
