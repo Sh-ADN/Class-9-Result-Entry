@@ -22,10 +22,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.text.style.TextAlign
@@ -350,10 +353,13 @@ fun RosterScreen(
     
     var showOnlyNotStarted by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<ConsiderationCategory?>(null) }
+    var focusedStudentRoll by remember { mutableStateOf<Int?>(null) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(currentSection) {
         selectedCategory = null
         showOnlyNotStarted = false
+        focusedStudentRoll = null
     }
 
     val rankMap = remember(sectionResults) {
@@ -802,6 +808,7 @@ fun RosterScreen(
             }
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
@@ -838,15 +845,43 @@ fun RosterScreen(
                         }
                     }
                 } else {
-                    items(
+                    itemsIndexed(
                         items = displayResults,
-                        key = { it.roster.roll },
-                        contentType = { "student_row" }
-                    ) { result ->
+                        key = { _, it -> it.roster.roll },
+                        contentType = { _, _ -> "student_row" }
+                    ) { index, result ->
                         val serialRank = if (selectedCategory != null) rankMap[result.roster.roll] else null
                         QuickEditStudentRow(
                             result = result,
                             serialRank = serialRank,
+                            isTargetFocus = focusedStudentRoll == result.roster.roll,
+                            onFocusConsumed = {
+                                if (focusedStudentRoll == result.roster.roll) {
+                                    focusedStudentRoll = null
+                                }
+                            },
+                            hasPrevious = index > 0,
+                            hasNext = index < displayResults.size - 1,
+                            onNavigatePrev = {
+                                if (index > 0) {
+                                    val prevRoll = displayResults[index - 1].roster.roll
+                                    focusedStudentRoll = prevRoll
+                                    scope.launch {
+                                        listState.animateScrollToItem((index - 1).coerceAtLeast(0))
+                                    }
+                                }
+                            },
+                            onAutoAdvance = {
+                                if (index < displayResults.size - 1) {
+                                    val nextRoll = displayResults[index + 1].roster.roll
+                                    focusedStudentRoll = nextRoll
+                                    scope.launch {
+                                        listState.animateScrollToItem(index + 1)
+                                    }
+                                } else {
+                                    showSnackbarMsg("শাখার শেষ শিক্ষার্থীর ফলাফল সম্পন্ন হয়েছে! 🎉")
+                                }
+                            },
                             onSave = viewModel::saveEntry,
                             showSnackbar = showSnackbarMsg
                         )
@@ -862,6 +897,12 @@ fun RosterScreen(
 fun QuickEditStudentRow(
     result: StudentResult,
     serialRank: Int? = null,
+    isTargetFocus: Boolean = false,
+    onFocusConsumed: () -> Unit = {},
+    hasPrevious: Boolean = false,
+    hasNext: Boolean = false,
+    onNavigatePrev: () -> Unit = {},
+    onAutoAdvance: () -> Unit = {},
     onSave: (Int, Int, Int, Double?) -> Unit,
     showSnackbar: (String) -> Unit
 ) {
@@ -879,6 +920,19 @@ fun QuickEditStudentRow(
                 str.replace(".", "")
             } ?: ""
         )
+    }
+
+    val marksFocusRequester = remember { FocusRequester() }
+    val gpaFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isTargetFocus) {
+        if (isTargetFocus) {
+            delay(60)
+            try {
+                marksFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+            onFocusConsumed()
+        }
     }
 
     LaunchedEffect(result.entry) {
@@ -912,6 +966,50 @@ fun QuickEditStudentRow(
         else -> null
     }
     val isGpaInvalid = gpaDigits.isNotEmpty() && (gpaDouble == null || gpaDouble !in 0.0..5.0)
+
+    val commitSaveNow: () -> Boolean = {
+        val tm = totalMarks.toIntOrNull()
+        val fc = failedCount
+        val g = gpaDouble
+
+        if (tm != null && !isMarksInvalid && fc != null) {
+            if (fc > 0 || (fc == 0 && g != null && !isGpaInvalid)) {
+                onSave(result.roster.roll, tm, fc, if (fc == 0) g else null)
+                isEdited = false
+                saveStatus = "saved"
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fun handleAdvance() {
+        if (isEdited) {
+            val tm = totalMarks.toIntOrNull()
+            if (isMarksInvalid) {
+                showSnackbar("সঠিক মোট নম্বর দিন (০-১১৫০)")
+                return
+            }
+            if (failedCount == null) {
+                if (tm != null) {
+                    failedCount = 0
+                    isEdited = true
+                    gpaFocusRequester.requestFocus()
+                    showSnackbar("ফেল বিষয় ০ (পাস) ধরা হয়েছে — জিপিএ দিন")
+                    return
+                }
+            } else if (failedCount == 0 && (gpaDouble == null || isGpaInvalid)) {
+                gpaFocusRequester.requestFocus()
+                showSnackbar("অনুগ্রহ করে বৈধ জিপিএ দিন (০.০ - ৫.০)")
+                return
+            }
+            commitSaveNow()
+        }
+        onAutoAdvance()
+    }
 
     // Debounced Auto-Save Loop (800ms) - ONLY active when user has modified data, avoiding coroutine churn during scrolling
     if (isEdited) {
@@ -1013,7 +1111,11 @@ fun QuickEditStudentRow(
                     Spacer(modifier = Modifier.height(6.dp))
                     
                     // Status Indicator Badge (Saving... / Saved / Synced / Draft / Not Started)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Status Indicator Badge + Auto-Advance Action Button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         when (saveStatus) {
                             "saving" -> {
                                 Box(
@@ -1110,6 +1212,38 @@ fun QuickEditStudentRow(
                                 }
                             }
                         }
+
+                        // Auto-Advance Next Action Pill
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isEdited) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isEdited) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else Color.Transparent
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { handleAdvance() }
+                                .testTag("auto_advance_button_${result.roster.roll}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    text = if (isEdited) "Save & Next" else "Next",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isEdited) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "Next Student",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (isEdited) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
                 
@@ -1121,8 +1255,30 @@ fun QuickEditStudentRow(
                     },
                     label = { Text("Total Marks") },
                     placeholder = { Text("0-1150") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(120.dp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = if (failedCount == null || failedCount == 0) ImeAction.Next else ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = {
+                            if (failedCount == null) {
+                                failedCount = 0
+                                isEdited = true
+                                gpaFocusRequester.requestFocus()
+                            } else if (failedCount == 0) {
+                                gpaFocusRequester.requestFocus()
+                            } else {
+                                handleAdvance()
+                            }
+                        },
+                        onDone = {
+                            handleAdvance()
+                        }
+                    ),
+                    modifier = Modifier
+                        .width(120.dp)
+                        .focusRequester(marksFocusRequester)
+                        .testTag("marks_input_${result.roster.roll}"),
                     singleLine = true,
                     isError = isMarksInvalid,
                     supportingText = if (isMarksInvalid) { { Text("0-1150") } } else null
@@ -1191,7 +1347,11 @@ fun QuickEditStudentRow(
                             gpaDigits = it
                             isEdited = true
                         },
-                        isError = isGpaInvalid
+                        isError = isGpaInvalid,
+                        firstBoxFocusRequester = gpaFocusRequester,
+                        onComplete = {
+                            handleAdvance()
+                        }
                     )
                     if (isGpaInvalid) {
                         Text(
@@ -1253,15 +1413,19 @@ fun FailedSubjectPill(
 fun GpaInputBoxes(
     value: String,
     onValueChange: (String) -> Unit,
-    isError: Boolean
+    isError: Boolean,
+    firstBoxFocusRequester: FocusRequester? = null,
+    onComplete: () -> Unit = {}
 ) {
     val focusRequesters = remember { List(3) { FocusRequester() } }
+    val box0Requester = firstBoxFocusRequester ?: focusRequesters[0]
     var pendingFocus by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
 
     if (pendingFocus != null) {
         LaunchedEffect(pendingFocus) {
             pendingFocus?.let {
-                focusRequesters[it].requestFocus()
+                if (it == 0) box0Requester.requestFocus() else focusRequesters[it].requestFocus()
                 pendingFocus = null
             }
         }
@@ -1287,16 +1451,23 @@ fun GpaInputBoxes(
         GpaSingleBox(
             char = value.getOrNull(0),
             isError = isError,
-            focusRequester = focusRequesters[0],
+            focusRequester = box0Requester,
             keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Next,
             onValueChange = { newStr ->
                 if (newStr.contains('.')) {
                     pendingFocus = 1
                 } else {
                     val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
-                    if (digit != null) setDigit(0, digit) else clearDigit(0)
+                    if (digit != null) {
+                        setDigit(0, digit)
+                        pendingFocus = 1
+                    } else {
+                        clearDigit(0)
+                    }
                 }
             },
+            onImeAction = { pendingFocus = 1 },
             onBackspace = { /* box 0 has no earlier box */ }
         )
         Text(
@@ -1308,6 +1479,7 @@ fun GpaInputBoxes(
             char = value.getOrNull(1),
             isError = isError,
             focusRequester = focusRequesters[1],
+            imeAction = ImeAction.Next,
             onValueChange = { newStr ->
                 val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
                 if (digit != null) {
@@ -1318,6 +1490,7 @@ fun GpaInputBoxes(
                     pendingFocus = 0
                 }
             },
+            onImeAction = { pendingFocus = 2 },
             onBackspace = { pendingFocus = 0 }
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -1325,14 +1498,22 @@ fun GpaInputBoxes(
             char = value.getOrNull(2),
             isError = isError,
             focusRequester = focusRequesters[2],
+            imeAction = ImeAction.Done,
             onValueChange = { newStr ->
                 val digit = newStr.replace(Regex("[^\\d]"), "").lastOrNull()
                 if (digit != null) {
                     setDigit(2, digit)
+                    scope.launch {
+                        delay(250)
+                        onComplete()
+                    }
                 } else {
                     clearDigit(2)
                     pendingFocus = 1
                 }
+            },
+            onImeAction = {
+                onComplete()
             },
             onBackspace = { pendingFocus = 1 }
         )
@@ -1346,7 +1527,9 @@ fun GpaSingleBox(
     focusRequester: FocusRequester,
     onValueChange: (String) -> Unit,
     onBackspace: () -> Unit,
-    keyboardType: KeyboardType = KeyboardType.Number
+    keyboardType: KeyboardType = KeyboardType.Number,
+    imeAction: ImeAction = ImeAction.Done,
+    onImeAction: () -> Unit = {}
 ) {
     val hasValue = char != null && char != ' '
     BasicTextField(
@@ -1370,7 +1553,11 @@ fun GpaSingleBox(
             },
         keyboardOptions = KeyboardOptions(
             keyboardType = keyboardType,
-            imeAction = ImeAction.Done
+            imeAction = imeAction
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { onImeAction() },
+            onDone = { onImeAction() }
         ),
         textStyle = MaterialTheme.typography.headlineMedium.copy(
             color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
