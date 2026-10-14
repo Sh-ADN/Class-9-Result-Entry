@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -66,6 +67,7 @@ import androidx.compose.ui.text.input.ImeAction
 import com.abutorab.resultentry.data.SyncState
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -292,35 +294,38 @@ fun CategoryCounterBadge(
 ) {
     val bg = if (isSelected) selectedContainerColor else containerColor
     val textCol = if (isSelected) selectedContentColor else contentColor
-    val borderCol = if (isSelected) selectedContentColor.copy(alpha = 0.6f) else contentColor.copy(alpha = 0.25f)
+    val borderCol = if (isSelected) selectedContentColor.copy(alpha = 0.85f) else contentColor.copy(alpha = 0.35f)
 
-    Surface(
-        onClick = onClick,
+    Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .height(26.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
                 color = borderCol,
-                shape = RoundedCornerShape(10.dp)
-            ),
-        color = bg,
-        shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
                 color = textCol,
                 maxLines = 1
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.width(3.dp))
             Text(
                 text = count.toBengaliDigits(),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
                 color = textCol,
                 maxLines = 1
             )
@@ -644,13 +649,14 @@ fun RosterScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            // Interactive Header for Section Selection, Live Consideration Summary & Instant Search
+            // Interactive Compact Header for Section Selection, Live Consideration Summary & Search
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 2.dp
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)) {
+                    // Row 1: Teacher Name + Compact Missing Filter Pill
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -658,35 +664,73 @@ fun RosterScreen(
                     ) {
                         val teacherName = if (currentSection == "A") "জনাব মেজবা উদ্দিন" else if (currentSection == "B") "জনাব অনন্য দেবনাথ" else ""
                         if (teacherName.isNotEmpty()) {
-                            Text(
-                                text = "শ্রেণি শিক্ষক: $teacherName",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "শ্রেণি শিক্ষক: $teacherName",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         } else {
                             Spacer(modifier = Modifier.width(1.dp))
                         }
-                        
-                        FilterChip(
-                            selected = showOnlyNotStarted,
-                            onClick = { 
-                                showOnlyNotStarted = !showOnlyNotStarted 
-                                if (showOnlyNotStarted) selectedCategory = null
-                            },
-                            label = { Text("Missing: $notStartedCount") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        )
+
+                        Box(
+                            modifier = Modifier
+                                .height(22.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(
+                                    if (showOnlyNotStarted) MaterialTheme.colorScheme.errorContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (showOnlyNotStarted) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else Color.Transparent,
+                                    shape = RoundedCornerShape(11.dp)
+                                )
+                                .clickable {
+                                    showOnlyNotStarted = !showOnlyNotStarted
+                                    if (showOnlyNotStarted) selectedCategory = null
+                                }
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(5.dp)
+                                        .background(
+                                            if (showOnlyNotStarted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            CircleShape
+                                        )
+                                )
+                                Text(
+                                    text = "Missing: $notStartedCount",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                                    color = if (showOnlyNotStarted) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
 
-                    // Fixed Live Consideration Category Summary Bar (মেধা, ১ম বিবেচনা, ২য় বিবেচনা, বিশেষ বিবেচনা)
+                    // Row 2: Fixed Live Consideration Category Summary Bar (মেধা, ১ম, ২য়, বিশেষ)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         CategoryCounterBadge(
                             title = "মেধা",
@@ -746,23 +790,67 @@ fun RosterScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
 
-                    OutlinedTextField(
+                    // Row 3: Compact Instant Search Bar
+                    BasicTextField(
                         value = searchQuery,
                         onValueChange = { viewModel.setSearchQuery(it) },
-                        placeholder = { Text("Search Roll or Name...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 13.sp
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (searchQuery.isEmpty()) {
+                                            Text(
+                                                "Search Roll or Name...",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { viewModel.setSearchQuery("") },
+                                            modifier = Modifier.size(22.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Clear Search",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        }
                     )
 
                     AnimatedVisibility(
@@ -771,14 +859,14 @@ fun RosterScreen(
                         exit = fadeOut() + shrinkVertically()
                     ) {
                         Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
-                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(6.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 8.dp)
+                                .padding(top = 4.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -794,13 +882,14 @@ fun RosterScreen(
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
-                                TextButton(
-                                    onClick = { selectedCategory = null },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(26.dp)
-                                ) {
-                                    Text("রিসেট", style = MaterialTheme.typography.labelSmall)
-                                }
+                                Text(
+                                    text = "✕ রিসেট",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clickable { selectedCategory = null }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
                             }
                         }
                     }
@@ -1073,10 +1162,10 @@ fun QuickEditStudentRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 4.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1285,19 +1374,19 @@ fun QuickEditStudentRow(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
                 "Failed Subjects:",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Efficient 5x2 grid of numeric selectors (0-9) - avoids heavy dynamic FlowRow measure cycles
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     (0..4).forEach { number ->
@@ -1312,7 +1401,7 @@ fun QuickEditStudentRow(
                     }
                 }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     (5..9).forEach { number ->
@@ -1334,13 +1423,13 @@ fun QuickEditStudentRow(
                 exit = shrinkVertically() + fadeOut()
             ) {
                 Column {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "GPA",
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelMedium,
                         color = if (isGpaInvalid) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     GpaInputBoxes(
                         value = gpaDigits,
                         onValueChange = { 
@@ -1358,7 +1447,7 @@ fun QuickEditStudentRow(
                             text = "Valid GPA: 0.0 to 5.0",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                            modifier = Modifier.padding(top = 2.dp, start = 4.dp)
                         )
                     }
                 }
@@ -1389,7 +1478,7 @@ fun FailedSubjectPill(
 
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(32.dp)
             .clip(CircleShape)
             .background(backgroundColor)
             .then(
@@ -1401,7 +1490,7 @@ fun FailedSubjectPill(
     ) {
         Text(
             text = number.toString(),
-            style = MaterialTheme.typography.labelLarge.copy(
+            style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
             ),
             color = contentColor
